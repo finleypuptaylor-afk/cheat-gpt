@@ -1,0 +1,31 @@
+name: Build Windows version
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build and test Windows app
+        shell: pwsh
+        run: ./windows/Build/build.ps1 -OutputRoot "${{ runner.temp }}/CheatGPTWindows"
+      - name: Preserve validation results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-validation
+          path: ${{ runner.temp }}/CheatGPTWindows/validation/
+          if-no-files-found: ignore
+      - name: Publish verified Windows package
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload v1.2 "${{ runner.temp }}/CheatGPTWindows/Cheat-GPT-Windows-1.0-x64.zip" "${{ runner.temp }}/CheatGPTWindows/Cheat-GPT-Windows-preview.png" "${{ runner.temp }}/CheatGPTWindows/Cheat-GPT-Windows-SHA256.txt" --repo "$env:GITHUB_REPOSITORY"
+          if ($LASTEXITCODE -ne 0) { throw 'Publishing the Windows package failed' }
