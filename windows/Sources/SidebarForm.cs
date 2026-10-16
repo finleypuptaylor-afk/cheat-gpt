@@ -26,6 +26,8 @@ public sealed class SidebarForm : Form
     private bool _busy, _quitting, _hotkey;
     private Panel? _welcome;
     private const int HotkeyID = 0xC6A1;
+    private static readonly uint ShowMessage = RegisterWindowMessage("CheatGPT.Windows.ShowSidebar.v1");
+    public static void ShowExisting() => PostMessage((IntPtr)0xffff, ShowMessage, IntPtr.Zero, IntPtr.Zero);
 
     public SidebarForm(bool smoke = false)
     {
@@ -196,7 +198,7 @@ public sealed class SidebarForm : Form
         _ = DwmSetWindowAttribute(Handle, 33, ref rounded, sizeof(int));
     }
     protected override void OnHandleDestroyed(EventArgs e) { if (_hotkey) UnregisterHotKey(Handle, HotkeyID); base.OnHandleDestroyed(e); }
-    protected override void WndProc(ref Message m) { if (m.Msg == 0x0312 && m.WParam.ToInt32() == HotkeyID) Toggle(); base.WndProc(ref m); }
+    protected override void WndProc(ref Message m) { if (m.Msg == 0x0312 && m.WParam.ToInt32() == HotkeyID) Toggle(); if (ShowMessage != 0 && (uint)m.Msg == ShowMessage) ShowSidebar(); base.WndProc(ref m); }
     private void DragHeader(object? sender, MouseEventArgs e) { if (e.Button == MouseButtons.Left) { ReleaseCapture(); SendMessage(Handle, 0xA1, (IntPtr)2, IntPtr.Zero); } }
 
     public async Task<object> SmokeTestAsync(string directory)
@@ -224,6 +226,8 @@ public sealed class SidebarForm : Form
         return new { os = Environment.OSVersion.ToString(), architecture = RuntimeInformation.ProcessArchitecture.ToString(), streamedReply = reply, cancellation = cancelled, newConversation = true, engineStopped = true };
     }
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern uint RegisterWindowMessage(string message);
+    [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] private static extern bool RegisterHotKey(IntPtr window, int id, uint modifiers, uint key);
     [DllImport("user32.dll")] private static extern bool UnregisterHotKey(IntPtr window, int id);
     [DllImport("user32.dll")] private static extern bool ReleaseCapture();

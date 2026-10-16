@@ -9,6 +9,14 @@ internal static class Program
     {
         ApplicationConfiguration.Initialize();
         var smoke = args.Length >= 2 && args[0] == "--smoke-test";
+        using var instance = smoke ? null : new Mutex(false, "Local\\CheatGPT.Windows");
+        var ownsInstance = false;
+        if (instance is not null)
+        {
+            try { ownsInstance = instance.WaitOne(0); }
+            catch (AbandonedMutexException) { ownsInstance = true; }
+            if (!ownsInstance) { SidebarForm.ShowExisting(); return; }
+        }
         using var sidebar = new SidebarForm(smoke);
         if (smoke)
         {
@@ -29,6 +37,7 @@ internal static class Program
                 finally { sidebar.Quit(); }
             };
         }
-        Application.Run(sidebar);
+        try { Application.Run(sidebar); }
+        finally { if (ownsInstance) instance?.ReleaseMutex(); }
     }
 }
