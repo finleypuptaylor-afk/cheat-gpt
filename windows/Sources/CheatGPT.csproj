@@ -9,7 +9,7 @@
     <AssemblyName>CheatGPT</AssemblyName>
     <Product>Cheat GPT</Product>
     <Title>Cheat GPT</Title>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>

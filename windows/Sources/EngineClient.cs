@@ -18,6 +18,10 @@ public sealed class EngineClient : IDisposable
     private readonly string _token = Guid.NewGuid().ToString("N");
     private Process? _process;
     private Uri? _base;
+    public AISettings Settings { get; set; } = AISettings.Load();
+    public int ActiveContext { get; private set; } = 4096;
+    public int ActiveThreads { get; private set; } = 4;
+    public async Task RestartAsync(CancellationToken cancellation) { StopEngine(); await StartAsync(cancellation); }
     public bool Ready { get; private set; }
     public int? EngineProcessId => _process is { HasExited: false } ? _process.Id : null;
     private bool _disposed;
@@ -42,6 +46,8 @@ public sealed class EngineClient : IDisposable
             var port = ((IPEndPoint)reservation.LocalEndpoint).Port;
             reservation.Stop();
             _base = new Uri($"http://127.0.0.1:{port}/");
+            var parameters = Settings.Validated();
+            ActiveContext = (int)parameters.Context; ActiveThreads = parameters.Threads;
             var start = new ProcessStartInfo(engine)
             {
                 WorkingDirectory = Path.GetDirectoryName(engine)!, UseShellExecute = false,
@@ -51,7 +57,7 @@ public sealed class EngineClient : IDisposable
             foreach (var key in start.Environment.Keys.Where(k => k.StartsWith("LLAMA_", StringComparison.OrdinalIgnoreCase)).ToList())
                 start.Environment.Remove(key);
             foreach (var arg in new[] { "--model", model, "--alias", "local", "--host", "127.0.0.1", "--port", port.ToString(),
-                "--api-key", _token, "--ctx-size", "4096", "--parallel", "1", "--n-gpu-layers", "0", "--offline", "--no-webui", "--log-disable" })
+                "--api-key", _token, "--ctx-size", ActiveContext.ToString(), "--threads", ActiveThreads.ToString(), "--parallel", "1", "--n-gpu-layers", "0", "--offline", "--no-webui", "--log-disable" })
                 start.ArgumentList.Add(arg);
             _process = new Process { StartInfo = start };
             _process.OutputDataReceived += (_, _) => { };
@@ -99,7 +105,9 @@ public sealed class EngineClient : IDisposable
         if (!Ready || _process is not { HasExited: false }) throw new InvalidOperationException("The engine is not running. Click Retry to restart it.");
         using var request = Request("v1/chat/completions");
         request.Method = HttpMethod.Post;
-        request.Content = new StringContent(JsonSerializer.Serialize(new { model = "local", messages = history.TakeLast(16), stream = true, max_tokens = 1024 }, JsonOptions), Encoding.UTF8, "application/json");
+        var p = Settings.Validated();
+        var conversation = new[] { new ChatMessage("system","You are Cheat GPT, a cheerful, warm and encouraging text assistant. Give sincere compliments when appropriate. Be concise and accurate, and gently correct mistakes. You cannot access private files, screenshots or take actions. If you are uncertain, say so.") }.Concat(history.TakeLast(Math.Clamp(ActiveContext / 1024,4,16)).Select(m => new ChatMessage(m.Role,m.Content[..Math.Min(700,m.Content.Length)])));
+        request.Content = new StringContent(JsonSerializer.Serialize(new { model = "local", messages = conversation, stream = true, max_tokens = p.Tokens, temperature = p.Temperature, top_p = p.TopP, top_k = p.TopK, repeat_penalty = p.RepeatPenalty }, JsonOptions), Encoding.UTF8, "application/json");
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellation);
         if (!response.IsSuccessStatusCode) throw new InvalidOperationException("The model could not answer. If this conversation is long, start a new one and try again.");
         await using var stream = await response.Content.ReadAsStreamAsync(cancellation);

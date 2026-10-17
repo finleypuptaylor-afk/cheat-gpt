@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $PSNativeCommandUseErrorActionPreference = $true
 $root = Split-Path $PSScriptRoot -Parent
-$version = '1.0'
+$version = '1.1'
 $bundle = Join-Path $OutputRoot 'CheatGPT-Windows'
 $cache = Join-Path $OutputRoot 'build-cache'
 $tests = Join-Path $OutputRoot 'validation'
@@ -53,4 +53,6 @@ $zip = Join-Path $OutputRoot "Cheat-GPT-Windows-$version-x64.zip"
 Compress-Archive -Path $bundle -DestinationPath $zip -CompressionLevel Optimal -Force
 $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
 "$hash  $(Split-Path $zip -Leaf)" | Set-Content -Encoding ascii (Join-Path $OutputRoot 'Cheat-GPT-Windows-SHA256.txt')
+Copy-Item $zip (Join-Path $tests (Split-Path $zip -Leaf))
+Copy-Item (Join-Path $OutputRoot 'Cheat-GPT-Windows-SHA256.txt') $tests
 Write-Host "Validated and packaged: $zip"
