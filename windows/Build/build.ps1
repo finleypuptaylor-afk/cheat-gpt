@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $PSNativeCommandUseErrorActionPreference = $true
 $root = Split-Path $PSScriptRoot -Parent
-$version = '1.0'
+$version = '1.2'
 $bundle = Join-Path $OutputRoot 'CheatGPT-Windows'
 $cache = Join-Path $OutputRoot 'build-cache'
 $tests = Join-Path $OutputRoot 'validation'
@@ -48,9 +48,25 @@ if ($process.ExitCode -ne 0 -or !(Test-Path (Join-Path $tests 'smoke-result.json
     throw 'Windows UI and local inference test failed'
 }
 Get-Content (Join-Path $tests 'smoke-result.json')
+$updateTests = Start-Process -FilePath (Join-Path $bundle 'CheatGPT.exe') -ArgumentList @('--updater-tests', ('"' + $tests + '"')) -PassThru
+if (!$updateTests.WaitForExit(60000)) { $updateTests.Kill($true); throw 'Updater tests timed out' }
+if ($updateTests.ExitCode -ne 0 -or !(Test-Path (Join-Path $tests 'updater-result.json'))) {
+    if (Test-Path (Join-Path $tests 'updater-error.txt')) { Get-Content (Join-Path $tests 'updater-error.txt') }
+    throw 'Updater verification and rollback tests failed'
+}
+Get-Content (Join-Path $tests 'updater-result.json')
 Copy-Item (Join-Path $tests 'windows-sidebar.png') (Join-Path $OutputRoot 'Cheat-GPT-Windows-preview.png')
 $zip = Join-Path $OutputRoot "Cheat-GPT-Windows-$version-x64.zip"
 Compress-Archive -Path $bundle -DestinationPath $zip -CompressionLevel Optimal -Force
 $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
 "$hash  $(Split-Path $zip -Leaf)" | Set-Content -Encoding ascii (Join-Path $OutputRoot 'Cheat-GPT-Windows-SHA256.txt')
+Copy-Item $zip (Join-Path $tests (Split-Path $zip -Leaf))
+Copy-Item (Join-Path $OutputRoot 'Cheat-GPT-Windows-SHA256.txt') $tests
+$patchRoot = Join-Path $cache 'update-content'
+$patchApp = Join-Path $patchRoot 'CheatGPT-Windows'
+New-Item -ItemType Directory -Force -Path $patchApp | Out-Null
+Get-ChildItem $bundle | Where-Object { $_.Name -ne 'Engine' -and $_.Name -ne 'Models' } | Copy-Item -Destination $patchApp -Recurse
+$patch = Join-Path $tests "Cheat-GPT-Windows-$version-update.zip"
+Compress-Archive -Path $patchApp -DestinationPath $patch -CompressionLevel Optimal -Force
+"$((Get-FileHash $patch -Algorithm SHA256).Hash.ToLowerInvariant())  $(Split-Path $patch -Leaf)" | Set-Content -Encoding ascii (Join-Path $tests 'Windows-update-SHA256.txt')
 Write-Host "Validated and packaged: $zip"
