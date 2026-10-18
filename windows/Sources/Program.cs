@@ -23,6 +23,12 @@ internal static class Program
             catch (AbandonedMutexException) { ownsInstance = true; }
             if (!ownsInstance) { SidebarForm.ShowExisting(); return; }
         }
+        if(!smoke && AISettings.Load().AutomaticUpdates) {
+            try {
+                var pending=new AppUpdater(AppContext.BaseDirectory);
+                if(pending.Ready && pending.ScheduleInstall(true)) { if(ownsInstance)instance?.ReleaseMutex(); return; }
+            } catch { /* An unavailable or invalid staged update must never prevent offline chat. */ }
+        }
         using var sidebar = new SidebarForm(smoke);
         if (smoke)
         {

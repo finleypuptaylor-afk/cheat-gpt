@@ -26,7 +26,7 @@ public sealed class SidebarForm : Form
     private readonly System.Windows.Forms.Timer _updateTimer = new() { Interval=43200000 };
     private readonly ToolStripMenuItem _updateStatus = new("Updates: waiting for first check");
     private readonly ToolStripMenuItem _installUpdate = new("Install update & restart") { Visible=false };
-    private bool _restartForUpdate;
+    private bool _restartForUpdate, _windowsShuttingDown;
     private Task? _initialization;
     private CancellationTokenSource? _replyCancellation;
     private bool _busy, _quitting, _hotkey;
@@ -128,12 +128,12 @@ public sealed class SidebarForm : Form
     {
         if(_smoke || _quitting || (!manual && !_engine.Settings.AutomaticUpdates))return;
         try { var result=await _updater.CheckAsync(_lifetime.Token); _installUpdate.Visible=_updater.Ready; if(manual) MessageBox.Show(this,result,"Cheat GPT updates"); }
-        catch(OperationCanceledException){}
+        catch(OperationCanceledException) when(_lifetime.IsCancellationRequested){}
         catch(Exception error) { _updateStatus.Text="Updates unavailable · will retry later"; if(manual) MessageBox.Show(this,error.Message,"Could not check for updates"); }
     }
     public void SchedulePendingUpdate()
     {
-        if(_smoke || (!_restartForUpdate && !_engine.Settings.AutomaticUpdates))return;
+        if(_smoke || _windowsShuttingDown || (!_restartForUpdate && !_engine.Settings.AutomaticUpdates))return;
         try { _updater.ScheduleInstall(_restartForUpdate); }
         catch(Exception error) { MessageBox.Show("The downloaded update could not start: "+error.Message,"Cheat GPT updates"); }
     }
@@ -228,6 +228,7 @@ public sealed class SidebarForm : Form
     }
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
+        _windowsShuttingDown = e.CloseReason == CloseReason.WindowsShutDown;
         if (!_quitting && e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; Hide(); return; }
         _quitting = true; _lifetime.Cancel(); _replyCancellation?.Cancel(); _engine.Dispose();
         base.OnFormClosing(e);

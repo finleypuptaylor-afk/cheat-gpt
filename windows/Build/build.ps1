@@ -70,3 +70,13 @@ $patch = Join-Path $tests "Cheat-GPT-Windows-$version-update.zip"
 Compress-Archive -Path $patchApp -DestinationPath $patch -CompressionLevel Optimal -Force
 "$((Get-FileHash $patch -Algorithm SHA256).Hash.ToLowerInvariant())  $(Split-Path $patch -Leaf)" | Set-Content -Encoding ascii (Join-Path $tests 'Windows-update-SHA256.txt')
 Write-Host "Validated and packaged: $zip"
+
+# Preserve a small application-core artifact plus a complete content manifest. This allows a
+# verified local repack without re-downloading an unchanged model/runtime after code-only fixes.
+$coreRoot = Join-Path $cache 'core-content'
+$coreApp = Join-Path $coreRoot 'CheatGPT-Windows'
+New-Item -ItemType Directory -Force -Path $coreApp | Out-Null
+foreach ($name in @('CheatGPT.exe','CheatGPT.dll','CheatGPT.deps.json','CheatGPT.runtimeconfig.json','README.md','THIRD-PARTY.md')) { Copy-Item (Join-Path $bundle $name) $coreApp }
+Compress-Archive -Path $coreApp -DestinationPath (Join-Path $tests 'Windows-application-core.zip') -CompressionLevel Optimal -Force
+$files = @(Get-ChildItem $bundle -File -Recurse | ForEach-Object { [ordered]@{ path=[IO.Path]::GetRelativePath($bundle,$_.FullName).Replace('\','/'); size=$_.Length; sha256=(Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() } })
+$files | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 (Join-Path $tests 'Windows-bundle-files.json')
