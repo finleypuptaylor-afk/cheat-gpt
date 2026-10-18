@@ -17,10 +17,16 @@ public sealed class SidebarForm : Form
     private readonly Label _error = new() { AutoSize = true, Dock = DockStyle.Fill, Padding = new Padding(18, 10, 18, 10), ForeColor = Color.FromArgb(239, 193, 136), Visible = false };
     private readonly TextBox _prompt = new() { Multiline = true, AcceptsReturn = true, BorderStyle = BorderStyle.None, Dock = DockStyle.Fill, MaxLength = 8000, BackColor = Color.FromArgb(35, 39, 37), ForeColor = Color.WhiteSmoke, Enabled = false, PlaceholderText = "Ask anything…", ScrollBars = ScrollBars.Vertical };
     private readonly Button _send = new() { Text = "↑", Width = 34, Height = 34, FlatStyle = FlatStyle.Flat, BackColor = Accent, ForeColor = Background, Enabled = false, AccessibleName = "Send message" };
+    private readonly Button _settings = SmallButton("⚙", "AI settings");
     private readonly Button _new = SmallButton("＋", "New conversation");
     private readonly Button _retry = SmallButton("Retry", "Restart local AI");
     private readonly NotifyIcon _tray;
     private readonly bool _smoke;
+    private readonly AppUpdater _updater = new(AppContext.BaseDirectory);
+    private readonly System.Windows.Forms.Timer _updateTimer = new() { Interval=43200000 };
+    private readonly ToolStripMenuItem _updateStatus = new("Updates: waiting for first check");
+    private readonly ToolStripMenuItem _installUpdate = new("Install update & restart") { Visible=false };
+    private bool _restartForUpdate, _windowsShuttingDown;
     private Task? _initialization;
     private CancellationTokenSource? _replyCancellation;
     private bool _busy, _quitting, _hotkey;
@@ -50,7 +56,9 @@ public sealed class SidebarForm : Form
         var tagline = new Label { Text = "A little space to think.", ForeColor = Muted, Font = new Font("Segoe UI", 8), Location = new Point(61, 43), AutoSize = true };
         var hide = SmallButton("×", "Hide sidebar"); hide.Anchor = AnchorStyles.Top | AnchorStyles.Right; hide.SetBounds(348, 20, 28, 30); hide.Click += (_, _) => Hide();
         _new.Anchor = AnchorStyles.Top | AnchorStyles.Right; _new.SetBounds(312, 20, 28, 30); _new.Click += (_, _) => ClearChat();
-        header.Controls.AddRange([logo, title, tagline, _new, hide]);
+        _settings.Anchor = AnchorStyles.Top | AnchorStyles.Right; _settings.SetBounds(276,20,28,30);
+        _settings.Click += async (_,_) => await OpenSettingsAsync();
+        header.Controls.AddRange([logo, title, tagline, _settings, _new, hide]);
         header.MouseDown += DragHeader; title.MouseDown += DragHeader; tagline.MouseDown += DragHeader;
         var statusRow = new Panel { Dock = DockStyle.Fill };
         _status.AutoEllipsis = true;
@@ -76,9 +84,16 @@ public sealed class SidebarForm : Form
         _send.Click += async (_, _) => { if (_busy) _replyCancellation?.Cancel(); else await SendAsync(); };
         var menu = new ContextMenuStrip { BackColor = Background, ForeColor = ForeColor };
         menu.Items.Add("Show / Hide Cheat GPT", null, (_, _) => Toggle());
+        menu.Items.Add("AI settings", null, async (_,_) => await OpenSettingsAsync());
         menu.Items.Add("New conversation", null, (_, _) => { if (!_busy) { ClearChat(); ShowSidebar(); } });
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Windows downloads", null, (_, _) => OpenUrl("https://github.com/finleypuptaylor-afk/cheat-gpt/releases/tag/v1.2"));
+        menu.Items.Add(_updateStatus);
+        menu.Items.Add("Check for updates…", null, async (_,_) => await CheckUpdatesAsync(true));
+        menu.Items.Add(_installUpdate);
+        _installUpdate.Click += (_,_) => { if(!_busy) { _restartForUpdate=true; Quit(); } };
+        _updater.Status += status => { if(!IsDisposed) BeginInvoke(() => { _updateStatus.Text=status; _installUpdate.Visible=_updater.Ready; _installUpdate.Enabled=!_busy; }); };
+        _updateTimer.Tick += async (_,_) => await CheckUpdatesAsync(false);
+        menu.Items.Add("Windows downloads", null, (_, _) => OpenUrl("https://github.com/finleypuptaylor-afk/cheat-gpt/releases/tag/windows-updates"));
         menu.Items.Add("Install engine runtime", null, (_, _) => OpenUrl("https://aka.ms/vc14/vc_redist.x64.exe"));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Quit Cheat GPT", null, (_, _) => Quit());
@@ -86,7 +101,7 @@ public sealed class SidebarForm : Form
         _tray.DoubleClick += (_, _) => Toggle();
         _messages.SizeChanged += (_, _) => Reflow();
         Resize += (_, _) => { _error.MaximumSize = new Size(Math.Max(250, ClientSize.Width), 0); Reflow(); };
-        Shown += async (_, _) => { PositionSidebar(); await EnsureLoadedAsync(); };
+        Shown += async (_, _) => { PositionSidebar(); await EnsureLoadedAsync(); if(!_smoke) { _updateTimer.Start(); _ = CheckUpdatesAsync(false); } };
         ClearChat();
     }
 
@@ -109,6 +124,33 @@ public sealed class SidebarForm : Form
         try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
         catch (Exception error) { MessageBox.Show(error.Message, "Cheat GPT"); }
     }
+    private async Task CheckUpdatesAsync(bool manual)
+    {
+        if(_smoke || _quitting || (!manual && !_engine.Settings.AutomaticUpdates))return;
+        try { var result=await _updater.CheckAsync(_lifetime.Token); _installUpdate.Visible=_updater.Ready; if(manual) MessageBox.Show(this,result,"Cheat GPT updates"); }
+        catch(OperationCanceledException) when(_lifetime.IsCancellationRequested){}
+        catch(Exception error) { _updateStatus.Text="Updates unavailable · will retry later"; if(manual) MessageBox.Show(this,error.Message,"Could not check for updates"); }
+    }
+    public void SchedulePendingUpdate()
+    {
+        if(_smoke || _windowsShuttingDown || (!_restartForUpdate && !_engine.Settings.AutomaticUpdates))return;
+        try { _updater.ScheduleInstall(_restartForUpdate); }
+        catch(Exception error) { MessageBox.Show("The downloaded update could not start: "+error.Message,"Cheat GPT updates"); }
+    }
+    private async Task OpenSettingsAsync()
+    {
+        if (_busy || !_engine.Ready) return;
+        using var dialog = new AISettingsForm(_engine.Settings);
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        var restart = (int)dialog.Value.Context != _engine.ActiveContext || dialog.Value.Threads != _engine.ActiveThreads;
+        _engine.Settings = dialog.Value;
+        if (restart) {
+            _busy=true; UpdateControls(); _status.Text="Applying context and CPU threads…";
+            try { await _engine.RestartAsync(_lifetime.Token); _status.Text="●  On-device · Ready"; ShowError(null); }
+            catch(Exception error) { ShowError(error.Message); _retry.Visible=true; }
+            finally { _busy=false; UpdateControls(); }
+        }
+    }
     private Task EnsureLoadedAsync() => _initialization ??= InitializeAsync();
     private async Task InitializeAsync()
     {
@@ -125,6 +167,8 @@ public sealed class SidebarForm : Form
         _send.Text = _busy ? "■" : "↑";
         _send.AccessibleName = _busy ? "Stop generating" : "Send message";
         _send.Enabled = !_quitting && (_busy || (_engine.Ready && !string.IsNullOrWhiteSpace(_prompt.Text)));
+        _installUpdate.Enabled = !_busy;
+        _settings.Enabled = !_busy && _engine.Ready;
         _new.Enabled = !_busy; _retry.Enabled = !_busy;
     }
     private MessageCard AddMessage(string role, string text)
@@ -184,11 +228,12 @@ public sealed class SidebarForm : Form
     }
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
+        _windowsShuttingDown = e.CloseReason == CloseReason.WindowsShutDown;
         if (!_quitting && e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; Hide(); return; }
         _quitting = true; _lifetime.Cancel(); _replyCancellation?.Cancel(); _engine.Dispose();
         base.OnFormClosing(e);
     }
-    protected override void OnFormClosed(FormClosedEventArgs e) { _tray.Dispose(); _lifetime.Dispose(); base.OnFormClosed(e); }
+    protected override void OnFormClosed(FormClosedEventArgs e) { _updateTimer.Dispose(); _tray.Dispose(); _lifetime.Dispose(); base.OnFormClosed(e); }
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
@@ -204,6 +249,14 @@ public sealed class SidebarForm : Form
     public async Task<object> SmokeTestAsync(string directory)
     {
         Directory.CreateDirectory(directory); await EnsureLoadedAsync();
+        var suggested = AISettings.Recommended.Validated();
+        if (AISettings.RamGB <= 0 || suggested.Threads > Environment.ProcessorCount) throw new InvalidOperationException("Hardware detection failed.");
+        var previousContext = _engine.ActiveContext;
+        _engine.Settings = new AISettings { Context=ContextWindow.Tokens8192, Threads=Math.Min(2,Environment.ProcessorCount), Tokens=128, Temperature=0.1, TopP=0.85, TopK=30, RepeatPenalty=1.1 };
+        await _engine.RestartAsync(_lifetime.Token);
+        if (_engine.ActiveContext != 8192 || _engine.ActiveThreads != Math.Min(2,Environment.ProcessorCount)) throw new InvalidOperationException("Engine parameter restart failed.");
+        using (var settingsPreview = new AISettingsForm(_engine.Settings)) { settingsPreview.Show(); await Task.Delay(200); using var image = new Bitmap(settingsPreview.Width,settingsPreview.Height); settingsPreview.DrawToBitmap(image,settingsPreview.ClientRectangle); image.Save(Path.Combine(directory,"windows-settings.png")); settingsPreview.Close(); }
+
         if (!_engine.Ready) throw new InvalidOperationException(_error.Text);
         _prompt.Text = "Say hello in one short sentence."; await SendAsync();
         if (_history.Count != 2 || _history[^1].Role != "assistant" || string.IsNullOrWhiteSpace(_history[^1].Content)) throw new InvalidOperationException("No streamed assistant reply: " + _error.Text);
@@ -223,7 +276,7 @@ public sealed class SidebarForm : Form
             try { using var child = Process.GetProcessById(pid); if (!child.HasExited) throw new InvalidOperationException("Model process was not stopped."); }
             catch (ArgumentException) { }
         }
-        return new { os = Environment.OSVersion.ToString(), architecture = RuntimeInformation.ProcessArchitecture.ToString(), streamedReply = reply, cancellation = cancelled, newConversation = true, engineStopped = true };
+        return new { os = Environment.OSVersion.ToString(), architecture = RuntimeInformation.ProcessArchitecture.ToString(), ramGB = AISettings.RamGB, context = _engine.ActiveContext, threads = _engine.ActiveThreads, parameters = true, streamedReply = reply, cancellation = cancelled, newConversation = true, engineStopped = true };
     }
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern uint RegisterWindowMessage(string message);
