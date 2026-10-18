@@ -4,7 +4,7 @@ A text AI running locally on your computer, available as a native Mac sidebar, a
 
 ## Downloads
 
-- [Windows app 1.0 — x64](https://github.com/finleypuptaylor-afk/cheat-gpt/releases/download/v1.2/Cheat-GPT-Windows-1.0-x64.zip)
+- [Windows app 1.2 — x64, automatic updates](https://github.com/finleypuptaylor-afk/cheat-gpt/releases/download/windows-updates/Cheat-GPT-Windows-1.2-x64.zip)
 - [Mac app 1.2 — Apple Silicon](https://github.com/finleypuptaylor-afk/cheat-gpt/releases/download/v1.2/Cheat-GPT-1.2.zip)
 - [Chrome sidebar extension 1.0 — Mac companion](https://github.com/finleypuptaylor-afk/cheat-gpt/releases/download/v1.2/Cheat-GPT-Chrome-1.0.zip)
 - [Release notes and checksums](https://github.com/finleypuptaylor-afk/cheat-gpt/releases/tag/v1.2)
@@ -15,9 +15,9 @@ For 64-bit Intel/AMD Windows 10 or 11 PCs. Download the Windows ZIP, choose **Ex
 
 Press **Ctrl–Alt–Space** to show or hide the sidebar, or use its system tray icon. Enter sends a message; Shift–Enter adds a line. Stop cancels an answer, Copy copies a message, and + starts a new conversation. The × button hides it. **Quit Cheat GPT** in the tray menu stops the app and model.
 
-If a PC needs Microsoft's Visual C++ runtime, choose **Install engine runtime** from the tray menu for Microsoft's official installer, then Retry. This first Windows version is unsigned and uses manual updates. Windows may show its normal downloaded-software prompt.
+If a PC needs Microsoft's Visual C++ runtime, choose **Install engine runtime** from the tray menu for Microsoft's official installer, then Retry. The executable is unsigned; its updater verifies separately signed release metadata and package hashes. Windows may show its normal downloaded-software prompt.
 
-The package was built and tested on a Windows x64 runner: streamed local replies, cancellation, clearing chat, and stopping the model process passed. The rendered Windows sidebar and SHA-256 checksum are attached to the release. Windows source and build scripts are in [windows/](windows/).
+The package was built and tested on a Windows x64 runner: streamed local replies, cancellation, clearing chat, and stopping the model process passed. SHA-256 checksums are attached to the Windows release. Signing, path validation, rollback on locked files, and preserving existing model/preferences were checked on the Windows runner. Windows source and build scripts are in [windows/](windows/).
 
 ## Mac app
 
@@ -41,7 +41,9 @@ The extension has streaming replies, stop/copy controls, new conversation, and n
 
 The Mac app checks this repository's signed feed automatically. Updates download in the background and install when the app quits. Use **Check for Updates…** in its menu for a manual check. Earlier Mac builds need version 1.2 installed once to switch feeds.
 
-Windows and the unpacked Chrome extension currently use manual updates. They do not inherit the Mac updater.
+Windows 1.2 checks its separate signed Windows update feed on startup and every 12 hours while running. Verified updates install when you quit; during Windows shutdown, installation is deferred to the next app launch. Choose **Install update & restart** from the tray menu to apply a downloaded update immediately, or **Check for updates…** for a manual check. **AI settings → Updates → Automatic updates** controls automatic checks and installation. Windows 1.0/1.1 need one manual replacement with 1.2 to gain the updater. [Windows update release and checksums](https://github.com/finleypuptaylor-afk/cheat-gpt/releases/tag/windows-updates).
+
+The unpacked Chrome extension still updates manually and does not inherit either desktop updater.
 
 ## Privacy
 

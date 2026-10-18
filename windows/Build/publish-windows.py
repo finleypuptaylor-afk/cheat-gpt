@@ -18,6 +18,9 @@ def main():
  assert a.patch.stat().st_size<=536870912
  a.output.mkdir(parents=True,exist_ok=True)
  key=run(['security','find-generic-password','-a','windows-updates','-s','CheatGPT.Windows.UpdateSigning','-w']).stdout
+ # macOS security prints multiline generic passwords as hex on some releases.
+ if not key.lstrip().startswith(b'-----BEGIN'):
+  key=bytes.fromhex(key.decode().strip())
  public=run(['openssl','pkey','-pubout'],input=key).stdout
  assert public.strip()==(Path(__file__).parent/'update-public.pem').read_bytes().strip(),'Signing key does not match the app key'
  feed={'version':a.version,'url':'https://github.com/finleypuptaylor-afk/cheat-gpt/releases/download/windows-updates/'+a.patch.name,'sha256':hashlib.file_digest(a.patch.open('rb'),'sha256').hexdigest(),'size':a.patch.stat().st_size}
